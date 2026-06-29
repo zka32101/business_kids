@@ -1,0 +1,89 @@
+name: business_kids
+description: 小学生向けコンビニ経営シミュレーション＆金銭教育アプリ
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # 状態管理
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Firebase
+  firebase_core: ^3.3.0
+  firebase_auth: ^5.1.4
+  cloud_firestore: ^5.2.1
+  cloud_functions: ^5.0.4
+  firebase_messaging: ^15.0.4
+  firebase_analytics: ^11.2.1
+
+  # 課金
+  purchases_flutter: ^8.0.0
+
+  # 広告
+  google_mobile_ads: ^5.3.0
+
+  # HTTP / API
+  http: ^1.2.2
+
+  # ローカル保存
+  flutter_secure_storage: ^9.2.2
+  shared_preferences: ^2.3.2
+
+  # アニメーション
+  lottie: ^3.1.2
+
+  # 画像
+  cached_network_image: ^3.3.1
+
+  # UI パッケージ
+  fl_chart: ^0.68.0
+  intl: ^0.20.2
+  gap: ^3.0.1
+
+  # ナビゲーション
+  go_router: ^14.2.7
+
+  # ユーティリティ
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+  uuid: ^4.4.2
+  collection: ^1.18.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.12
+  freezed: ^2.5.7
+  json_serializable: ^6.8.0
+  riverpod_generator: ^2.4.3
+
+flutter:
+  uses-material-design: true
+  generate: true
+
+  assets:
+    - assets/images/store/
+    - assets/images/npcs/
+    - assets/images/products/
+    - assets/images/events/
+    - assets/images/badges/
+    - assets/images/icons/
+    - assets/lottie/
+
+  fonts:
+    - family: NotoSansJP
+      fonts:
+        - asset: assets/fonts/NotoSansJP-Regular.ttf
+        - asset: assets/fonts/NotoSansJP-Bold.ttf
+          weight: 700

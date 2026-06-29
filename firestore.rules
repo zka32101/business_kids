@@ -1,0 +1,180 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── ヘルパー関数 ─────────────────────────────────────────────
+
+    // 認証済みユーザーか確認
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // 対象ドキュメントの parentUid が自分のUID と一致するか
+    function isParentOf(childData) {
+      return isAuthenticated() && request.auth.uid == childData.parentUid;
+    }
+
+    // 書き込みデータが許可フィールドのみか確認
+    function onlyFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ─── users ────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read:  if isAuthenticated() && request.auth.uid == userId;
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isAuthenticated() && request.auth.uid == userId
+                    && onlyFields(['email', 'childIds', 'updatedAt']);
+      allow delete: if false; // 削除は Cloud Functions 経由のみ
+    }
+
+    // ─── children ─────────────────────────────────────────────────
+    match /children/{childId} {
+      // 読み取り: 親ユーザー本人のみ
+      allow read: if isAuthenticated()
+                  && request.auth.uid == resource.data.parentUid;
+
+      // 作成: 認証済みユーザーが自分の子として作成
+      allow create: if isAuthenticated()
+                    && request.auth.uid == request.resource.data.parentUid
+                    && request.resource.data.planType == 'free'
+                    && request.resource.data.hasPremium == false;
+
+      // 更新: 親ユーザーのみ、かつ制限フィールド
+      allow update: if isAuthenticated()
+                    && request.auth.uid == resource.data.parentUid
+                    && onlyFields([
+                        'name', 'avatarId', 'currentLevel', 'storeLevel',
+                        'totalProfit', 'totalRevenue', 'consecutiveDays',
+                        'lastPlayedAt', 'planType', 'hasPremium', 'updatedAt'
+                      ]);
+
+      // 削除: 不可（Cloud Functions 経由のみ）
+      allow delete: if false;
+    }
+
+    // ─── gameSessions ──────────────────────────────────────────────
+    match /gameSessions/{sessionId} {
+      // 読み取り: 対象の子の親ユーザー
+      allow read: if isAuthenticated()
+                  && exists(/databases/$(database)/documents/children/$(resource.data.childUid))
+                  && get(/databases/$(database)/documents/children/$(resource.data.childUid)).data.parentUid == request.auth.uid;
+
+      // 作成: 対象の子の親ユーザーのみ
+      allow create: if isAuthenticated()
+                    && exists(/databases/$(database)/documents/children/$(request.resource.data.childUid))
+                    && get(/databases/$(database)/documents/children/$(request.resource.data.childUid)).data.parentUid == request.auth.uid;
+
+      // 更新・削除: 不可（Cloud Functions 経由のみ）
+      allow update, delete: if false;
+    }
+
+    // ─── conceptMasteries ─────────────────────────────────────────
+    match /conceptMasteries/{childUid} {
+      // 読み取り: 対象の子の親ユーザー
+      allow read: if isAuthenticated()
+                  && exists(/databases/$(database)/documents/children/$(childUid))
+                  && get(/databases/$(database)/documents/children/$(childUid)).data.parentUid == request.auth.uid;
+
+      // 書き込み: Cloud Functions のみ（直接書き込み不可）
+      allow write: if false;
+    }
+
+    // ─── seasonEvents ─────────────────────────────────────────────
+    match /seasonEvents/{eventId} {
+      // 全認証ユーザーが読み取り可能
+      allow read: if isAuthenticated();
+      // 書き込みは Cloud Functions のみ
+      allow write: if false;
+    }
+
+    // ─── weeklyChallenges ─────────────────────────────────────────
+    match /weeklyChallenges/{challengeId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // ─── rankings ─────────────────────────────────────────────────
+    match /rankings/{rankingId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // ─── npcStates ────────────────────────────────────────────────
+    // NPC の好感度・常連状態を子どもごとに管理
+    match /npcStates/{childUid}/npcs/{npcId} {
+      // 読み取り・書き込み: 対象の子の親ユーザー
+      allow read, write: if isAuthenticated()
+                         && exists(/databases/$(database)/documents/children/$(childUid))
+                         && get(/databases/$(database)/documents/children/$(childUid)).data.parentUid == request.auth.uid;
+    }
+
+    // ─── dailyChallenges ──────────────────────────────────────────
+    // 日替わりチャレンジ（子どもごと）
+    match /children/{childUid}/dailyChallenges/{date} {
+      allow read: if isAuthenticated()
+                  && exists(/databases/$(database)/documents/children/$(childUid))
+                  && get(/databases/$(database)/documents/children/$(childUid)).data.parentUid == request.auth.uid;
+
+      allow create, write: if isAuthenticated()
+                           && exists(/databases/$(database)/documents/children/$(childUid))
+                           && get(/databases/$(database)/documents/children/$(childUid)).data.parentUid == request.auth.uid;
+    }
+
+    // ─── weeklyChallenges ─────────────────────────────────────────
+    // 週間チャレンジ（子どもごと）
+    match /children/{childUid}/weeklyChallenges/{challengeId} {
+      allow read: if isAuthenticated()
+                  && exists(/databases/$(database)/documents/children/$(childUid))
+                  && get(/databases/$(database)/documents/children/$(childUid)).data.parentUid == request.auth.uid;
+
+      allow create, write: if isAuthenticated()
+                           && exists(/databases/$(database)/documents/children/$(childUid))
+                           && get(/databases/$(database)/documents/children/$(childUid)).data.parentUid == request.auth.uid;
+    }
+
+    // ─── badges ───────────────────────────────────────────────────
+    // 取得したバッジ（子どもごと）
+    match /children/{childUid}/badges/{badgeId} {
+      allow read: if isAuthenticated()
+                  && exists(/databases/$(database)/documents/children/$(childUid))
+                  && get(/databases/$(database)/documents/children/$(childUid)).data.parentUid == request.auth.uid;
+
+      allow create: if isAuthenticated()
+                    && exists(/databases/$(database)/documents/children/$(childUid))
+                    && get(/databases/$(database)/documents/children/$(childUid)).data.parentUid == request.auth.uid;
+
+      allow update, delete: if false;
+    }
+
+    // ─── titles ───────────────────────────────────────────────────
+    // 装備中の称号（子どもごと）
+    match /children/{childUid}/titles/{titleId} {
+      allow read: if isAuthenticated()
+                  && exists(/databases/$(database)/documents/children/$(childUid))
+                  && get(/databases/$(database)/documents/children/$(childUid)).data.parentUid == request.auth.uid;
+
+      allow create, write: if isAuthenticated()
+                           && exists(/databases/$(database)/documents/children/$(childUid))
+                           && get(/databases/$(database)/documents/children/$(childUid)).data.parentUid == request.auth.uid;
+    }
+
+    // ─── streaks ──────────────────────────────────────────────────
+    // 連続プレイ情報（子どもごと）
+    match /children/{childUid}/streaks/{streakId} {
+      allow read: if isAuthenticated()
+                  && exists(/databases/$(database)/documents/children/$(childUid))
+                  && get(/databases/$(database)/documents/children/$(childUid)).data.parentUid == request.auth.uid;
+
+      allow create, write: if isAuthenticated()
+                           && exists(/databases/$(database)/documents/children/$(childUid))
+                           && get(/databases/$(database)/documents/children/$(childUid)).data.parentUid == request.auth.uid;
+    }
+
+    // ─── その他コレクション ───────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
