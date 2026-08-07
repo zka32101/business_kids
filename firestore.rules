@@ -42,13 +42,20 @@ service cloud.firestore {
                     && request.resource.data.hasPremium == false;
 
       // 更新: 親ユーザーのみ、かつ制限フィールド
+      // 注意: planType / hasPremium はここに含めない。
+      // 課金状態はストア(RevenueCat)の検証を経た Cloud Functions からのみ変更されるべきで、
+      // クライアントから書き込み可能にすると誰でも直接 Firestore を更新して
+      // 課金なしでプレミアム機能を有効化できてしまう（決済バイパスの脆弱性）。
       allow update: if isAuthenticated()
                     && request.auth.uid == resource.data.parentUid
                     && onlyFields([
                         'name', 'avatarId', 'currentLevel', 'storeLevel',
                         'totalProfit', 'totalRevenue', 'consecutiveDays',
-                        'lastPlayedAt', 'planType', 'hasPremium', 'updatedAt'
-                      ]);
+                        'lastPlayedAt', 'updatedAt'
+                      ])
+                    // planType / hasPremium は不変（Cloud Functions 経由でのみ変更）
+                    && request.resource.data.planType == resource.data.planType
+                    && request.resource.data.hasPremium == resource.data.hasPremium;
 
       // 削除: 不可（Cloud Functions 経由のみ）
       allow delete: if false;
