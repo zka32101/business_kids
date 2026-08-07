@@ -59,6 +59,50 @@ allow update: if isAuthenticated()
 プレミアム化を実データに反映する場合は、ストアのレシート/Webhookを検証した
 Cloud Functions（Admin SDK、ルールをバイパス）からのみ書き込む設計にする必要がある。
 
+## 🔴 High: `children.create` にフィールド制限・初期値検証が無い（修正済み）
+
+**該当ファイル**: `firestore.rules`
+
+自己レビュー（`/code-review`）で指摘。`children` の `create` ルールは `planType == 'free'` /
+`hasPremium == false` のみをチェックしており、`onlyFields()` によるフィールド制限も
+値の範囲チェックも無かった。そのため、認証済みユーザーは自分の子ドキュメント作成時に
+
+```
+children.add({
+  parentUid: myUid, planType: 'free', hasPremium: false,
+  totalProfit: 999999999, totalRevenue: 999999999,
+  currentLevel: 99, storeLevel: 'mega', consecutiveDays: 365, ...
+})
+```
+
+のように任意の初期値を仕込め、一切プレイせず最大進捗・最大売上を偽装できた。
+`update` ルールで `planType`/`hasPremium` を締めても、`create` 時点で好きな値を
+埋め込めては同じ「クライアントが不正に進捗・収益を自己申告できる」問題が残ってしまう。
+
+### 修正内容
+
+`create` ルールに `onlyFields()`（許可フィールドの固定）と、初期値の強制
+（`totalProfit == 0`、`totalRevenue == 0`、`consecutiveDays == 0`、
+`currentLevel in [1, 2, 3]`、`storeLevel == 'small'`）を追加した。
+
+## 🟢 Fixed（同一PR内で発見・修正）: `onlyFields` の判定方法が原因で `children.update` が実質使用不能だった
+
+**該当ファイル**: `firestore.rules`
+
+自己レビューで、既存の `onlyFields(fields)` ヘルパーが
+`request.resource.data.keys().hasOnly(fields)` （＝更新後のドキュメント全体のキー集合）
+をチェックしていたことが判明。`children` ドキュメントには `parentUid` / `createdAt` が
+常に存在するが、これらは `update` の許可リストに含まれていなかったため、
+`FirestoreService.updateChild()`（`ChildNotifier.updateLevel()` からレベルアップ時に
+呼ばれる唯一の呼び出し元）による更新は **常に `permission-denied` で拒否され、
+レベルアップが Firestore に保存されていなかった**（本PRの変更前から存在した不具合）。
+
+同じ許可リストを本PRで書き換える箇所だったため、合わせて修正した。
+「今回の書き込みで実際に変化したフィールド」だけを見る `onlyChangedFields()`
+（`request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields)`）を追加し、
+`users.update` / `children.update` をこちらに切り替えた。未変更フィールドの存在に
+左右されず、`planType`/`hasPremium` を書き換えようとした場合はこれまで通り拒否される。
+
 ## 🟡 Medium: `totalRevenue` / `totalProfit` / `gameSessions` の値検証不足（未修正・要検討）
 
 - `children.update` は `totalProfit` / `totalRevenue` を任意の値に直接上書き可能
